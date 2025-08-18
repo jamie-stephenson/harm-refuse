@@ -1,0 +1,10 @@
+[project]
+name = "harm-refuse"
+version = "0.1.0"
+description = "Reproducing the paper 'LLMs Encode Harmfulness and Refuasl Separately'."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "datasets>=4.0.0",
+    "nnsight>=0.4.11",
+]
