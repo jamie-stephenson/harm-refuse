@@ -2,11 +2,14 @@
 Utilities for creating datasets for all experiments
 """
 from .inference import run_inference
+from .refuse import is_refused
+from .config import get_dataset_path
 
 from nnsight import LanguageModel
 from datasets import load_dataset, Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
 from typing import Dict
+from pathlib import Path
 
 def _reformat(
     ds: Dataset,
@@ -15,22 +18,32 @@ def _reformat(
     prompt_key: str,
     category_key: str,
     source: str,
+    batch_size: int = 1,
 ) -> Dataset:
     """Normalises datasets to format we need for experiments."""
     rows = []
-    for i, row in enumerate(ds):
-        prompt = row[prompt_key]
-        h_inst, h_post, is_refused = run_inference(prompt, model)
-        rows.append({
-            "prompt": prompt,
-            "source": source,
-            "category": row.get(category_key, ""),
-            "source_id": f"{source.lower()}_{i}",
-            "is_harmful": is_harmful,
-            "is_refused": is_refused,
-            "h_inst": h_inst,
-            "h_post": h_post,
-        })
+    for batch in ds.batch(batch_size):
+        prompts = batch[prompt_key]
+        responses, resid = run_inference(prompts, model)
+        rows.extend([
+            {
+                "prompt": p,
+                "source": source,
+                "category": c,
+                "source_id": f"{source.lower()}_{i}",
+                "is_harmful": is_harmful,
+                "is_refused": is_refused(r),
+                "resid": h,
+            } 
+            for i, (p, r, h, c) in enumerate(
+                zip(
+                    prompts, 
+                    responses, 
+                    resid, 
+                    batch.get(category_key, ""),
+                )
+            )
+        ])
 
     return Dataset.from_list(rows)
 
@@ -155,7 +168,10 @@ def alpaca(model: LanguageModel) -> Dataset:
         source="Alpaca",
     )
 
-def build_dataset(model: LanguageModel) -> Dataset:
+def _build_dataset(
+    path: Path,
+    model: LanguageModel,
+) -> DatasetDict:
     components = [
         advbench,
         jbb,
@@ -164,9 +180,28 @@ def build_dataset(model: LanguageModel) -> Dataset:
         alpaca,
     ]
 
-    save_to_disk concatenate_datasets([
+    base = concatenate_datasets([
         ds(model) for ds in components
     ])
+
+    combos = [
+        ("harmless_refused",  False, True),
+        ("harmless_accepted", False, False),
+        ("harmful_refused",   True,  True),
+        ("harmful_accepted",  True,  False),
+    ]
+
+    out = {
+        name: base.filter(
+            lambda x: x["is_harmful"] == h and x["is_refused"] == r
+        )
+        for name, h, r in combos
+    }
+
+    ds = DatasetDict(out)
+    ds.save_to_disk(path)
+
+    return ds
 
 def get_dataset(
     model: LanguageModel,
@@ -183,30 +218,21 @@ def get_dataset(
 
     Each prompt has the `model`'s chat template applied  to it.
     """
-    if not dataset exists:
-        build_dataset(model)
-    
-    base = load_from_disk()
+    path = get_dataset_path(model)
+    if path.exists():
+        ds = load_from_disk(path)
+    else:
+        ds = _build_dataset(path, model)
 
-    combos = [
-        ("harmless_refused",  False, True),
-        ("harmless_accepted", False, False),
-        ("harmful_refused",   True,  True),
-        ("harmful_accepted",  True,  False),
-    ]
-
-    out = {}
-    for name, harmful, refused in combos:
-        subset = base.filter(
-            lambda x: x["is_harmful"] == harmful and x["is_refused"] == refused
-        )
-
-        if strict and len(subset) < n_samples:
+    sampled_splits = {}
+    for name, split in ds.items():
+        if strict and len(split) < n_samples:
             raise ValueError(
-                f"Not enough rows for {name}: have {len(subset)}, need {n_samples}."
+                f"Not enough rows for {name}: have {len(split)}, need {n_samples}."
             )
+        shuffled = split.shuffle(seed)
+        sampled = shuffled.select(range(min(n_samples, len(shuffled))))
+        sampled_splits[name] = sampled
 
-        k = n_samples if len(subset) >= n_samples else len(subset)
-        out[name] = subset.shuffle(seed=seed).select(range(k))
+    return DatasetDict(sampled_splits)
 
-    return DatasetDict(out)

@@ -12,6 +12,7 @@ refusal_phrases = [
 def is_refused(
     response: str,
 ) -> bool:
+    # TODO: is a single response a valid basis for `is_refused`
     for phrase in refusal_phrases:
         if phrase in response:
             return True
