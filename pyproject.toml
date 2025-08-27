@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.19"]
+build-backend = "hatchling.build"
+
 [project]
 name = "harm-refuse"
 version = "0.1.0"
@@ -8,3 +12,6 @@ dependencies = [
     "datasets>=4.0.0",
     "nnsight>=0.4.11",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
