@@ -11,3 +11,4 @@ wheels/
 uv.lock
 
 test.py
+data/

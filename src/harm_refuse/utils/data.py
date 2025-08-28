@@ -7,7 +7,9 @@ from .config import get_dataset_path
 
 from nnsight import LanguageModel
 from datasets import load_dataset, Dataset, DatasetDict, concatenate_datasets, load_from_disk
+from tqdm.auto import tqdm
 
+from math import ceil
 from typing import Dict
 from pathlib import Path
 
@@ -18,11 +20,18 @@ def _reformat(
     prompt_key: str,
     category_key: str,
     source: str,
-    batch_size: int = 1,
+    batch_size: int = 128,
 ) -> Dataset:
     """Normalises datasets to format we need for experiments."""
     rows = []
-    for batch in ds.batch(batch_size):
+    batched_ds_with_pbar = tqdm(
+        ds.iter(batch_size),
+        total=ceil(len(ds)/batch_size),
+        unit="batch",
+        desc=f"{source}",
+    )
+
+    for batch in batched_ds_with_pbar:
         prompts = batch[prompt_key]
         responses, resid = run_inference(prompts, model)
         rows.extend([
@@ -40,7 +49,7 @@ def _reformat(
                     prompts, 
                     responses, 
                     resid, 
-                    batch.get(category_key, ""),
+                    batch.get(category_key, [""]*len(prompts)),
                 )
             )
         ])
@@ -175,9 +184,9 @@ def _build_dataset(
     components = [
         advbench,
         jbb,
-        sorry_bench,
+        # sorry_bench,
         xstest,
-        alpaca,
+        # alpaca,
     ]
 
     base = concatenate_datasets([
