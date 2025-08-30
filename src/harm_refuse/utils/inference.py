@@ -2,6 +2,7 @@
 Utilities for model inference.
 """
 from nnsight import LanguageModel
+import torch
 from torch import Tensor
 
 from typing import Tuple, List
@@ -21,16 +22,19 @@ def run_inference(
     model: LanguageModel,
 ) -> Tuple[List[str], Tensor]:
     tokens = _tokenize(prompts, model)
-    with model.generate(tokens, max_new_tokens=256):
-        # Save the residual stream after *one* forward pass
-        resid = model.model.layers.output.save()
+    layers = model.model.layers
+    with torch.inference_mode():
+        with model.generate(tokens, max_new_tokens=256):
+            # Save the residual stream after *one* forward pass
+            resid_list = [layers[i].output for i in range(len(layers))].save()
 
-        # Save output tokens after *all* forwards passes
-        response_tokens = model.generator.output.save()
+            # Save output tokens after *all* forwards passes
+            response_tokens = model.generator.output.save()
 
+    resid = torch.stack(resid_list, dim=1).cpu()
     responses = model.tokenizer.batch_decode(
         response_tokens,
-        skip_special_tokens=True,
+        skip_special_tokens=False,
     )
 
     return responses, resid
