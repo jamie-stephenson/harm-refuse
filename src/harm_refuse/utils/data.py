@@ -237,5 +237,5 @@ def get_dataset(
         for k, m in masks.items()
     }
 
-    return DatasetDict(splits).with_format("torch", columns=["resid"])
+    return DatasetDict(splits).set_format("torch", columns=["resid"])
 
