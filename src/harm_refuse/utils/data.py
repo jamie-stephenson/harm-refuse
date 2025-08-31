@@ -8,6 +8,7 @@ from .config import get_dataset_path
 from nnsight import LanguageModel
 from datasets import load_dataset, Dataset, DatasetDict, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
+import numpy as np
 
 from math import ceil
 from typing import Dict
@@ -177,10 +178,10 @@ def alpaca(model: LanguageModel) -> Dataset:
         source="Alpaca",
     )
 
-def _build_dataset(
+def _build_base_dataset(
     path: Path,
     model: LanguageModel,
-) -> DatasetDict:
+) -> Dataset:
     components = [
         advbench,
         jbb,
@@ -193,24 +194,9 @@ def _build_dataset(
         ds(model) for ds in components
     ])
 
-    combos = [
-        ("harmless_refused",  False, True),
-        ("harmless_accepted", False, False),
-        ("harmful_refused",   True,  True),
-        ("harmful_accepted",  True,  False),
-    ]
+    base.save_to_disk(path)
 
-    out = {
-        name: base.filter(
-            lambda x: x["is_harmful"] == h and x["is_refused"] == r
-        )
-        for name, h, r in combos
-    }
-
-    ds = DatasetDict(out)
-    ds.save_to_disk(path)
-
-    return ds
+    return base
 
 def get_dataset(
     model: LanguageModel,
@@ -231,17 +217,25 @@ def get_dataset(
     if path.exists():
         ds = load_from_disk(path)
     else:
-        ds = _build_dataset(path, model)
+        ds = _build_base_dataset(path, model)
 
-    sampled_splits = {}
-    for name, split in ds.items():
-        if strict and len(split) < n_samples:
-            raise ValueError(
-                f"Not enough rows for {name}: have {len(split)}, need {n_samples}."
-            )
-        shuffled = split.shuffle(seed)
-        sampled = shuffled.select(range(min(n_samples, len(shuffled))))
-        sampled_splits[name] = sampled
+    h = np.array(ds["is_harmful"], bool)
+    r = np.array(ds["is_refused"], bool)
 
-    return DatasetDict(sampled_splits)
+    masks = {
+        "harmless_refused": (~h & r),
+        "harmless_accepted": (~h & ~r),
+        "harmful_refused": (h & r),
+        "harmful_accepted": (h & ~r)
+    }
+
+    rng = np.random.default_rng(seed)
+    splits = {
+        k: ds.select(
+            rng.choice(np.where(m)[0], size=min(n_samples, m.sum()), replace=False).tolist()
+        ) 
+        for k, m in masks.items()
+    }
+
+    return DatasetDict(splits).with_format("torch", columns=["resid"])
 
