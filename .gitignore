@@ -12,3 +12,4 @@ uv.lock
 
 test.py
 data/
+outputs/

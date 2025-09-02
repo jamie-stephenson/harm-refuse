@@ -5,9 +5,8 @@ from nnsight import LanguageModel
 import torch
 from torch import Tensor
 
-from typing import Tuple, List
 
-def _tokenize(prompts: List[str], model: LanguageModel) -> Tensor:
+def _tokenize(prompts: list[str], model: LanguageModel) -> Tensor:
     chats = [[{"role": "user", "content": p}] for p in prompts]
     return model.tokenizer.apply_chat_template(
         chats,
@@ -18,9 +17,9 @@ def _tokenize(prompts: List[str], model: LanguageModel) -> Tensor:
     ) # pyright: ignore[reportReturnType]
 
 def run_inference(
-    prompts: List[str],
+    prompts: list[str],
     model: LanguageModel,
-) -> Tuple[List[str], Tensor]:
+) -> tuple[list[str], Tensor]:
     tokens = _tokenize(prompts, model)
     layers = model.model.layers
     with torch.inference_mode():

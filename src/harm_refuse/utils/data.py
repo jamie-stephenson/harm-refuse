@@ -3,7 +3,6 @@ Utilities for creating datasets for all experiments
 """
 from .inference import run_inference
 from .refuse import is_refused
-from .config import get_dataset_path
 
 from nnsight import LanguageModel
 from datasets import load_dataset, Dataset, DatasetDict, concatenate_datasets, load_from_disk
@@ -199,6 +198,7 @@ def _build_base_dataset(
     return base
 
 def get_dataset(
+    path: Path,
     model: LanguageModel,
     n_samples: int = 100,
     strict: bool = True,
@@ -213,7 +213,6 @@ def get_dataset(
 
     Each prompt has the `model`'s chat template applied  to it.
     """
-    path = get_dataset_path(model)
     if path.exists():
         ds = load_from_disk(path)
     else:

@@ -1,0 +1,6 @@
+name: cluster
+model_name: smol
+n_ids: 1
+paths:
+  dataset: data/${model_name}/
+  out: out/${name}/${model_name}/${now:%Y-%m-%d}/
