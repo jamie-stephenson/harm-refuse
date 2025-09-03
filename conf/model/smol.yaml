@@ -1,0 +1,4 @@
+# @package _global_
+model_name: smol
+paths:
+  model: HuggingFaceTB/SmolLM2-135M-Instruct

@@ -5,12 +5,18 @@ from .inference import run_inference
 from .refuse import is_refused
 
 from nnsight import LanguageModel
-from datasets import load_dataset, Dataset, DatasetDict, concatenate_datasets, load_from_disk
+from datasets import (
+    Dataset,
+    DatasetDict,
+    concatenate_datasets,
+    load_from_disk,
+    load_dataset,
+    Array3D,
+)
 from tqdm.auto import tqdm
 import numpy as np
 
 from math import ceil
-from typing import Dict
 from pathlib import Path
 
 def _reformat(
@@ -193,15 +199,32 @@ def _build_base_dataset(
         ds(model) for ds in components
     ])
 
-    base.save_to_disk(path)
+    # shortest sequence length
+    s_min = min(min(len(seq) for seq in ex) for ex in base["resid"])
 
-    return base
+    def trim_batch(batch):
+        return {"resid": [[seq[-s_min:] for seq in ex] for ex in batch["resid"]]}
+
+    base_trimmed = base.map(
+        trim_batch,
+        batched=True,
+        batch_size=256,
+        num_proc=1,
+        load_from_cache_file=False,
+    )
+
+    L = len(base_trimmed[0]["resid"])
+    D = len(base_trimmed[0]["resid"][0][0])
+    base_trimmed = base_trimmed.cast_column("resid", Array3D((L, s_min, D), "float32"))
+
+    base_trimmed.save_to_disk(path)
+
+    return base_trimmed
 
 def get_dataset(
     path: Path,
     model: LanguageModel,
     n_samples: int = 100,
-    strict: bool = True,
     seed: int = 90,
 ) -> DatasetDict:
     """
@@ -227,16 +250,23 @@ def get_dataset(
         "harmful_refused": (h & r),
         "harmful_accepted": (h & ~r)
     }
-
+   
     rng = np.random.default_rng(seed)
-    splits = {
-        k: ds.select(
-            rng.choice(np.where(m)[0], size=min(n_samples, m.sum()), replace=False).tolist()
-        ) 
-        for k, m in masks.items()
-    }
+    splits = {}
+    for k, m in masks.items():
+        if not np.any(m):
+            raise ValueError(f"Split '{k}' is empty.")
+        elif n_samples > m.sum():
+            raise ValueError(
+                f"Not enough examples in split '{k}' ({m.sum()}<{n_samples})."
+            )
+        else:
+            splits[k] = ds.select(
+                rng.choice(np.where(m)[0], size=n_samples, replace=False).tolist()
+            ) 
 
-    dsdict = DatasetDict(splits)
-    dsdict.set_format("torch", columns=["resid"])
-    return dsdict
+    ds = DatasetDict(splits)
+    ds.set_format("torch", columns=["resid"])
+
+    return ds
 

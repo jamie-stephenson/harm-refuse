@@ -1,0 +1,4 @@
+# @package _global_
+model_name: qwen
+paths:
+  model: Qwen/Qwen2-7B-Instruct

@@ -1,6 +1,10 @@
+defaults:
+- /experiments/defaults
+
+# This will not be a config attribute, this points to the file in conf/model/ 
+- model: smol
+- _self_
+
 name: cluster
-model_name: smol
-n_ids: 1
-paths:
-  dataset: data/${model_name}/
-  out: out/${name}/${model_name}/${now:%Y-%m-%d}/
+
+# Default overrides:

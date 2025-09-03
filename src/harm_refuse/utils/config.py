@@ -1,6 +1,12 @@
+"""
+Class for handling experiment config.
+`MISSING` means this attribute must be set from a yaml config:
+either from `defaults.yaml` or from an experiment specific yaml file.
+"""
 from nnsight import LanguageModel
 from transformers import AutoTokenizer
 from hydra.core.config_store import ConfigStore
+from omegaconf import OmegaConf, DictConfig, MISSING
 
 from dataclasses import dataclass
 from typing import Any
@@ -9,24 +15,32 @@ from pathlib import Path
 
 @dataclass
 class Paths:
-    model: Path
-    data: Path
-    out: Path
+    model: str = MISSING
+    data: Path = MISSING
+    out: Path = MISSING
 
 @dataclass
 class Config:
-    name: str
-    paths: Paths
-    device: str = "auto"
-    n_ids: int = 1
+    name: str = MISSING
+    model_name: str = MISSING
+    paths: Paths = MISSING
+    device: str = MISSING
+    n_ids: int = MISSING
+    n_samples: int = MISSING
+    
+    @classmethod
+    def from_dictconfig(cls, dictconfig: DictConfig):
+        schema = OmegaConf.structured(cls)
+        merged = OmegaConf.merge(schema, dictconfig)
+        return OmegaConf.to_object(merged)
 
     def get_model(self) -> LanguageModel:
         return LanguageModel(
-            self.model_path,
+            self.paths.model,
             device_map=self.device,
         )
 
-    def chat_tail_len(self,tokenizer: Any = None) -> int:
+    def chat_tail_len(self, tokenizer: Any = None) -> int:
         has_chat = hasattr(tokenizer, "apply_chat_template")
         if tokenizer and not has_chat:
             warn(
@@ -39,7 +53,7 @@ class Config:
             )
 
         # Resolve tokenizer
-        tok = tokenizer if has_chat else AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
+        tok = tokenizer if has_chat else AutoTokenizer.from_pretrained(self.paths.model, use_fast=True)
 
         mark = "\uE000\uE001\uE002"
         rendered = tok.apply_chat_template(

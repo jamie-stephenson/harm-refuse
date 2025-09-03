@@ -1,0 +1,8 @@
+# @package _global_
+device: auto
+n_ids: 3
+n_samples: 10
+
+paths:
+  data: data/${model_name}/
+  out: out/${name}/${model_name}/${now:%Y-%m-%d}/
