@@ -71,7 +71,7 @@ def advbench(model: LanguageModel) -> Dataset:
         source="AdvBench",
     )
 
-def jbb(model: LanguageModel) -> Dict[str, Dataset]:
+def jbb(model: LanguageModel) -> Dataset:
     """
     JailbreakBench behaviors: has 'harmful' and 'benign' splits.
     Use 'Goal' as the prompt; 'Category' is available.  MIT license.
@@ -125,7 +125,7 @@ def sorry_bench(model: LanguageModel) -> Dataset:
     )
 
 
-def xstest(model: LanguageModel) -> Dict[str, Dataset]:
+def xstest(model: LanguageModel) -> Dataset:
     """
     XSTest includes 250 safe + 200 unsafe prompts (labels 'safe'/'unsafe').
     Use 'prompt' as text; include 'type' or 'focus' in category if present.  CC-BY-4.0.
@@ -236,5 +236,7 @@ def get_dataset(
         for k, m in masks.items()
     }
 
-    return DatasetDict(splits).set_format("torch", columns=["resid"])
+    dsdict = DatasetDict(splits)
+    dsdict.set_format("torch", columns=["resid"])
+    return dsdict
 
