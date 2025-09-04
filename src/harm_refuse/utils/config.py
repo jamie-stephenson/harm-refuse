@@ -40,7 +40,7 @@ class Config:
             device_map=self.device,
         )
 
-    def chat_tail_len(self, tokenizer: Any = None) -> int:
+    def _chat_tail_len(self, tokenizer: Any = None) -> int:
         has_chat = hasattr(tokenizer, "apply_chat_template")
         if tokenizer and not has_chat:
             warn(
@@ -64,7 +64,7 @@ class Config:
         suffix = rendered.split(mark, 1)[1]
         return len(tok(suffix, add_special_tokens=False)["input_ids"])
 
-    def get_ids(self, tokenizer: Any = None) -> list[int]:
+    def get_ids(self, tokenizer: Any = None) -> tuple[list[int], int]:
         """
         Gets the position ids (at which we run the experiment) based on `n_ids`. 
 
@@ -74,12 +74,14 @@ class Config:
 
         We are flexible with the object we infer `t_inst` from for development purposes. 
         """
-        tail_len = self.chat_tail_len(tokenizer)
-        return list({
-            -i-1 
-            for j in range(0, self.n_ids)
-            for i in (j, j-tail_len)
+        tail_len = self._chat_tail_len(tokenizer)
+        ids = list({
+            -i 
+            for j in range(1, self.n_ids)
+            for i in (j, j+tail_len)
         })
+
+        return sorted(ids), tail_len
 
 
 cs = ConfigStore.instance()
