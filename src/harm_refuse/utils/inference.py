@@ -23,7 +23,11 @@ def run_inference(
 ) -> tuple[list[str], Tensor]:
     tokens = _tokenize(prompts, model)
     layers = model.model.layers
-    n_layers = len(layers)
+
+    # Once the model goes into "remote mode" it becomes an `Envoy`
+    # which does not expose `config` etc., so we store n_layers now.
+    n_layers = model.config.num_hidden_layers
+
     with torch.inference_mode():
         with model.generate(tokens, max_new_tokens=256, remote=True):
             # Save the residual stream after *one* forward pass

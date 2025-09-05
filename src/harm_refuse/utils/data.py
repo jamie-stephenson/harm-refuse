@@ -46,18 +46,15 @@ def _reformat(
                 "prompt": p,
                 "source": source,
                 "category": c,
-                "source_id": f"{source.lower()}_{i}",
                 "is_harmful": is_harmful,
                 "is_refused": is_refused(r),
                 "resid": h,
             } 
-            for i, (p, r, h, c) in enumerate(
-                zip(
-                    prompts, 
-                    responses, 
-                    resid, 
-                    batch.get(category_key, [""]*len(prompts)),
-                )
+            for p, r, h, c in zip(
+                prompts, 
+                responses, 
+                resid, 
+                batch.get(category_key, [""]*len(prompts)),
             )
         ])
 
@@ -207,6 +204,17 @@ def _build_base_dataset(
     base = concatenate_datasets([
         ds(model, ids) for ds in components
     ])
+    
+    # idk if all models expose their structure like this
+    # but all the ones for this project do.
+    L = model.config.num_hidden_layers
+    S = len(ids),
+    D = model.config.hidden_size
+
+    base = base.cast_column(
+        "resid",
+        Array3D((L, S, D),"float32")
+    )
 
     base.save_to_disk(path)
 
@@ -216,7 +224,7 @@ def get_dataset(
     path: Path,
     model: LanguageModel,
     ids: list[int],
-    n_samples: int = 100,
+    n_samples: int,
     seed: int = 90,
 ) -> DatasetDict:
     """
