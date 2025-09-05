@@ -21,7 +21,6 @@ def cluster(
         n_samples=config.n_samples,
     )
 
-
     # (n_clusters, n_layers, n_ids, d_model)
     cluster_centers = torch.stack([
         ds[name][:]["resid"].mean(dim = 0) 

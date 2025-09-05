@@ -13,10 +13,8 @@ from datasets import (
     load_dataset,
     Array3D,
 )
-from tqdm.auto import tqdm
 import numpy as np
 
-from math import ceil
 from pathlib import Path
 
 def _reformat(
@@ -30,33 +28,20 @@ def _reformat(
     batch_size: int = 128,
 ) -> Dataset:
     """Normalises datasets to format we need for experiments."""
-    rows = []
-    batched_ds_with_pbar = tqdm(
-        ds.iter(batch_size),
-        total=ceil(len(ds)/batch_size),
-        unit="batch",
-        desc=f"{source}",
-    )
+    prompts = ds[prompt_key]
+    responses, resid = run_inference(prompts, model, ids, batch_size)
 
-    for batch in batched_ds_with_pbar:
-        prompts = batch[prompt_key]
-        responses, resid = run_inference(prompts, model, ids)
-        rows.extend([
-            {
-                "prompt": p,
-                "source": source,
-                "category": c,
-                "is_harmful": is_harmful,
-                "is_refused": is_refused(r),
-                "resid": h,
-            } 
-            for p, r, h, c in zip(
-                prompts, 
-                responses, 
-                resid, 
-                batch.get(category_key, [""]*len(prompts)),
-            )
-        ])
+    rows = [
+        {
+            "prompt": item[prompt_key],
+            "source": source,
+            "category": item.get(category_key, ""),
+            "is_harmful": is_harmful,
+            "is_refused": is_refused(r),
+            "resid": h,
+        }
+        for item, r, h in zip(ds,responses,resid)
+    ]
 
     return Dataset.from_list(rows)
 
@@ -208,7 +193,7 @@ def _build_base_dataset(
     # idk if all models expose their structure like this
     # but all the ones for this project do.
     L = model.config.num_hidden_layers
-    S = len(ids),
+    S = len(ids)
     D = model.config.hidden_size
 
     base = base.cast_column(
