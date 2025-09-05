@@ -208,27 +208,9 @@ def _build_base_dataset(
         ds(model, ids) for ds in components
     ])
 
-    # shortest sequence length
-    s_min = min(min(len(seq) for seq in ex) for ex in base["resid"])
+    base.save_to_disk(path)
 
-    def trim_batch(batch):
-        return {"resid": [[seq[-s_min:] for seq in ex] for ex in batch["resid"]]}
-
-    base_trimmed = base.map(
-        trim_batch,
-        batched=True,
-        batch_size=256,
-        num_proc=1,
-        load_from_cache_file=False,
-    )
-
-    L = len(base_trimmed[0]["resid"])
-    D = len(base_trimmed[0]["resid"][0][0])
-    base_trimmed = base_trimmed.cast_column("resid", Array3D((L, s_min, D), "float32"))
-
-    base_trimmed.save_to_disk(path)
-
-    return base_trimmed
+    return base
 
 def get_dataset(
     path: Path,
