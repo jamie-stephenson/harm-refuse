@@ -7,12 +7,12 @@ name = "harm-refuse"
 version = "0.1.0"
 description = "Reproducing the paper 'LLMs Encode Harmfulness and Refuasl Separately'."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "==3.12.*"
 dependencies = [
     "datasets>=4.0.0",
     "hydra-core>=1.3.2",
     "matplotlib>=3.10.6",
-    "nnsight>=0.4.11",
+    "nnsight>=0.5.3",
     "tqdm>=4.67.1",
 ]
 

@@ -22,6 +22,7 @@ from pathlib import Path
 def _reformat(
     ds: Dataset,
     model: LanguageModel,
+    ids: list[int],
     is_harmful: bool,
     prompt_key: str,
     category_key: str,
@@ -39,7 +40,7 @@ def _reformat(
 
     for batch in batched_ds_with_pbar:
         prompts = batch[prompt_key]
-        responses, resid = run_inference(prompts, model)
+        responses, resid = run_inference(prompts, model, ids)
         rows.extend([
             {
                 "prompt": p,
@@ -62,7 +63,7 @@ def _reformat(
 
     return Dataset.from_list(rows)
 
-def advbench(model: LanguageModel) -> Dataset:
+def advbench(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     AdvBench harmful behaviors.
     HF hub: walledai/AdvBench (train split, columns include 'prompt').  MIT license.
@@ -71,13 +72,14 @@ def advbench(model: LanguageModel) -> Dataset:
     return _reformat(
         ds,
         model,
+        ids,
         is_harmful=True,
         prompt_key="prompt",
         category_key=None,
         source="AdvBench",
     )
 
-def jbb(model: LanguageModel) -> Dataset:
+def jbb(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     JailbreakBench behaviors: has 'harmful' and 'benign' splits.
     Use 'Goal' as the prompt; 'Category' is available.  MIT license.
@@ -89,6 +91,7 @@ def jbb(model: LanguageModel) -> Dataset:
     harmful = _reformat(
         ds=harmful_split,
         model=model,
+        ids=ids,
         is_harmful=True,
         prompt_key="Goal",
         category_key="Category",
@@ -98,6 +101,7 @@ def jbb(model: LanguageModel) -> Dataset:
     benign = _reformat(
         ds=benign_split,
         model=model,
+        ids=ids,
         is_harmful=False,
         prompt_key="Goal",
         category_key="Category",
@@ -106,7 +110,7 @@ def jbb(model: LanguageModel) -> Dataset:
 
     return concatenate_datasets([harmful, benign]) 
 
-def sorry_bench(model: LanguageModel) -> Dataset:
+def sorry_bench(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     SORRY-Bench unsafe instructions across 44 categories (+ mutations).
     You must accept the license on the hub and be logged in.
@@ -124,6 +128,7 @@ def sorry_bench(model: LanguageModel) -> Dataset:
     return _reformat(
         ds,
         model,
+        ids,
         is_harmful=True,
         prompt_key="turns",
         category_key="category",
@@ -131,7 +136,7 @@ def sorry_bench(model: LanguageModel) -> Dataset:
     )
 
 
-def xstest(model: LanguageModel) -> Dataset:
+def xstest(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     XSTest includes 250 safe + 200 unsafe prompts (labels 'safe'/'unsafe').
     Use 'prompt' as text; include 'type' or 'focus' in category if present.  CC-BY-4.0.
@@ -143,6 +148,7 @@ def xstest(model: LanguageModel) -> Dataset:
     safe = _reformat(
         ds=safe,
         model=model,
+        ids=ids,
         is_harmful=False,
         prompt_key="prompt",
         category_key=None,
@@ -152,6 +158,7 @@ def xstest(model: LanguageModel) -> Dataset:
     unsafe = _reformat(
         ds=unsafe,
         model=model,
+        ids=ids,
         is_harmful=True,
         prompt_key="prompt",
         category_key=None,
@@ -160,7 +167,7 @@ def xstest(model: LanguageModel) -> Dataset:
     
     return concatenate_datasets([safe, unsafe])
 
-def alpaca(model: LanguageModel) -> Dataset:
+def alpaca(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     Alpaca instruction-tuning data (harmless). Use 'instruction' + optional 'input' to form a single prompt.
     Prefer the popular cleaned variant: yahma/alpaca-cleaned (CC-BY-4.0).
@@ -177,6 +184,7 @@ def alpaca(model: LanguageModel) -> Dataset:
     return _reformat(
         ds,
         model,
+        ids,
         is_harmful=False,
         prompt_key="prompt",
         category_key=None,
@@ -186,6 +194,7 @@ def alpaca(model: LanguageModel) -> Dataset:
 def _build_base_dataset(
     path: Path,
     model: LanguageModel,
+    ids: list[int],
 ) -> Dataset:
     components = [
         advbench,
@@ -196,7 +205,7 @@ def _build_base_dataset(
     ]
 
     base = concatenate_datasets([
-        ds(model) for ds in components
+        ds(model, ids) for ds in components
     ])
 
     # shortest sequence length
@@ -224,6 +233,7 @@ def _build_base_dataset(
 def get_dataset(
     path: Path,
     model: LanguageModel,
+    ids: list[int],
     n_samples: int = 100,
     seed: int = 90,
 ) -> DatasetDict:
@@ -239,7 +249,7 @@ def get_dataset(
     if path.exists():
         ds = load_from_disk(path)
     else:
-        ds = _build_base_dataset(path, model)
+        ds = _build_base_dataset(path, model, ids)
 
     h = np.array(ds["is_harmful"], bool)
     r = np.array(ds["is_refused"], bool)

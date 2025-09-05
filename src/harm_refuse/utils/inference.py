@@ -19,13 +19,15 @@ def _tokenize(prompts: list[str], model: LanguageModel) -> Tensor:
 def run_inference(
     prompts: list[str],
     model: LanguageModel,
+    ids: list[int],
 ) -> tuple[list[str], Tensor]:
     tokens = _tokenize(prompts, model)
     layers = model.model.layers
+    n_layers = len(layers)
     with torch.inference_mode():
-        with model.generate(tokens, max_new_tokens=256):
+        with model.generate(tokens, max_new_tokens=256, remote=True):
             # Save the residual stream after *one* forward pass
-            resid_list = [layers[i].output for i in range(len(layers))].save()
+            resid_list = [layers[i].output[:, ids] for i in range(n_layers)].save()
 
             # Save output tokens after *all* forwards passes
             response_tokens = model.generator.output.save()
