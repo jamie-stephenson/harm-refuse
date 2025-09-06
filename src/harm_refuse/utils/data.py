@@ -28,7 +28,7 @@ def _reformat(
     batch_size: int = 128,
 ) -> Dataset:
     """Normalises datasets to format we need for experiments."""
-    prompts = ds[prompt_key]
+    prompts = list(ds[prompt_key])
     responses, resid = run_inference(prompts, model, ids, batch_size)
 
     rows = [

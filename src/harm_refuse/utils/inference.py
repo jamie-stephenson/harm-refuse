@@ -28,29 +28,29 @@ def run_inference(
     # Once the model goes into "remote mode" it becomes an `Envoy`
     # which does not expose `config` etc., so we store n_layers now.
     n_layers = model.config.num_hidden_layers
-    
+    tokens = _template_and_tokenize(prompts, model)
+
     with model.session(remote=True), torch.inference_mode():
         resid_list = []
         responses_tokens = []
 
-        for i in tqdm(range(0, len(prompts), batch_size)):
-            batch = prompts[i:i+batch_size]
-            tokens = _template_and_tokenize(batch, model)
+        for i in range(0, len(tokens), batch_size):
+            batch = tokens[i:i+batch_size]
 
-            with model.generate(tokens, max_new_tokens=256):
+            with model.generate(batch, max_new_tokens=256):
                 # Save the residual stream after *one* forward pass
                 resid_list_batch = [layers[i].output[:, ids] for i in range(n_layers)].save()
 
                 # Save output tokens after *all* forwards passes
                 response_tokens = model.generator.output.save()
 
-            resid_batch = torch.stack(resid_list_batch, dim=1).cpu()
+            resid_batch = torch.stack([h.cpu() for h in resid_list_batch], dim=1)
             resid_list.extend(resid_batch)
             responses_tokens.extend(response_tokens)
 
-        responses = model.tokenizer.batch_decode(
-            responses_tokens,
-            skip_special_tokens=True,
-        )
+    responses = model.tokenizer.batch_decode(
+        responses_tokens,
+        skip_special_tokens=True,
+    )
 
     return responses, resid_list
