@@ -29,9 +29,10 @@ def run_inference(
     # which does not expose `config` etc., so we store n_layers now.
     n_layers = model.config.num_hidden_layers
     
-    with model.session(remote=True) and torch.inference_mode():
+    with model.session(remote=True), torch.inference_mode():
         resid_list = []
         responses_tokens = []
+
         for i in tqdm(range(0, len(prompts), batch_size)):
             batch = prompts[i:i+batch_size]
             tokens = _template_and_tokenize(batch, model)
