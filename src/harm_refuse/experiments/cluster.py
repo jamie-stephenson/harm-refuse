@@ -45,8 +45,10 @@ def cluster(
     # (n_mistakes, batch_size, n_layers, n_ids)
     cossim_diff = cossims[0] - cossims[1]
 
-    plot_graphs(cossim_diff, tail_len, ids)
+    fig = plot_graphs(cossim_diff, tail_len, ids)
     plt.show()
+
+    fig.savefig(config.paths.out / "plot.png")
 
 def plot_graphs(
     cossim_diff: torch.Tensor,
@@ -115,4 +117,4 @@ def plot_graphs(
 
     axes[0].set_ylabel("mean cossim diff")
     axes[-1].legend(title="line")
-    return fig, axes
+    return fig
