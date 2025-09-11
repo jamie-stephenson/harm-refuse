@@ -77,7 +77,7 @@ class Config:
         tail_len = self._chat_tail_len(tokenizer)
         ids = list({
             -i 
-            for j in range(1, self.n_ids)
+            for j in range(1, self.n_ids+1)
             for i in (j, j+tail_len)
         })
 

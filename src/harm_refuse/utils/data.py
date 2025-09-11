@@ -11,11 +11,14 @@ from datasets import (
     concatenate_datasets,
     load_from_disk,
     load_dataset,
+    Features,
+    Value,
     Array3D,
 )
 import numpy as np
 
 from pathlib import Path
+
 
 def _reformat(
     ds: Dataset,
@@ -28,29 +31,40 @@ def _reformat(
     batch_size: int = 128,
 ) -> Dataset:
     """Normalises datasets to format we need for experiments."""
+
     prompts = list(ds[prompt_key])
     responses, resid = run_inference(prompts, model, ids, batch_size)
 
-    rows = [
-        {
-            "prompt": item[prompt_key],
-            "source": source,
-            "category": item.get(category_key, ""),
-            "is_harmful": is_harmful,
-            "is_refused": is_refused(r),
-            "resid": h,
-        }
-        for item, r, h in zip(ds,responses,resid)
-    ]
+    L = model.config.num_hidden_layers
+    S = len(ids)
+    D = model.config.hidden_size
 
-    return Dataset.from_list(rows)
+    cols = {
+        "prompt": [item[prompt_key] for item in ds],
+        "source": [source]*len(ds),
+        "category": [item.get(category_key, "") for item in ds],
+        "is_harmful": [is_harmful]*len(ds),
+        "is_refused": [is_refused(r) for r in responses],
+        "resid": [h for h in resid],
+    }
+
+    feats = Features({
+        "prompt": Value("string"),
+        "source": Value("string"),
+        "category": Value("string"),
+        "is_harmful": Value("bool"),
+        "is_refused": Value("bool"),
+        "resid": Array3D((L, S, D), "float32"),
+    })
+
+    return Dataset.from_dict(cols, features=feats)
 
 def advbench(model: LanguageModel, ids: list[int]) -> Dataset:
     """
     AdvBench harmful behaviors.
     HF hub: walledai/AdvBench (train split, columns include 'prompt').  MIT license.
     """
-    ds = load_dataset("walledai/AdvBench")["train"]  # columns: ['prompt', 'target'] etc.
+    ds = load_dataset("walledai/AdvBench", split="train[:10]")  # columns: ['prompt', 'target'] etc.
     return _reformat(
         ds,
         model,
@@ -180,9 +194,9 @@ def _build_base_dataset(
 ) -> Dataset:
     components = [
         advbench,
-        jbb,
+        # jbb,
         # sorry_bench,
-        xstest,
+        # xstest,
         # alpaca,
     ]
 

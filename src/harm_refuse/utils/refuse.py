@@ -2,7 +2,6 @@
 Utilities for separating prompts based on whether
 a model refuses to answer them.
 """
-from nnsight import LanguageModel
 
 REFUSAL_PHRASES = [
     "I'm sorry",
