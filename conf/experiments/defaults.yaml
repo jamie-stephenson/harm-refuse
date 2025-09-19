@@ -1,6 +1,6 @@
 # @package _global_
 device: auto
-n_ids: 3
+n_ids: 1
 n_samples: 100
 
 paths:

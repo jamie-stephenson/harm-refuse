@@ -64,7 +64,7 @@ def advbench(model: LanguageModel, ids: list[int]) -> Dataset:
     AdvBench harmful behaviors.
     HF hub: walledai/AdvBench (train split, columns include 'prompt').  MIT license.
     """
-    ds = load_dataset("walledai/AdvBench", split="train[:10]")  # columns: ['prompt', 'target'] etc.
+    ds = load_dataset("walledai/AdvBench", split="train")  # columns: ['prompt', 'target'] etc.
     return _reformat(
         ds,
         model,
@@ -115,7 +115,7 @@ def sorry_bench(model: LanguageModel, ids: list[int]) -> Dataset:
     ds = load_dataset(
         "sorry-bench/sorry-bench-202503",
         token="", 
-        split="train",
+        split="train[:1000]",
     ).map(
         # Prompt is wrapped in list that is always length 1. 
         lambda e: {"turns": e["turns"][0]} 
@@ -129,6 +129,7 @@ def sorry_bench(model: LanguageModel, ids: list[int]) -> Dataset:
         prompt_key="turns",
         category_key="category",
         source="SORRY-Bench",
+        batch_size=16,
     )
 
 
@@ -168,7 +169,7 @@ def alpaca(model: LanguageModel, ids: list[int]) -> Dataset:
     Alpaca instruction-tuning data (harmless). Use 'instruction' + optional 'input' to form a single prompt.
     Prefer the popular cleaned variant: yahma/alpaca-cleaned (CC-BY-4.0).
     """
-    ds = load_dataset("yahma/alpaca-cleaned")["train"]  # columns: instruction, input, output
+    ds = load_dataset("yahma/alpaca-cleaned", split="train[:1000]")  # columns: instruction, input, output
     
     ds = ds.map(
         lambda e: {
@@ -194,10 +195,10 @@ def _build_base_dataset(
 ) -> Dataset:
     components = [
         advbench,
-        # jbb,
-        # sorry_bench,
-        # xstest,
-        # alpaca,
+        jbb,
+        sorry_bench,
+        xstest,
+        alpaca,
     ]
 
     base = concatenate_datasets([
@@ -222,9 +223,9 @@ def _build_base_dataset(
 def get_dataset(
     path: Path,
     model: LanguageModel,
-    ids: list[int],
     n_samples: int,
-    seed: int = 90,
+    seed: int = 91,
+    ids: list[int] | None = None,
 ) -> DatasetDict:
     """
     Get `DatasetDict` consisting of `n_samples` from each prompt type: 
@@ -236,9 +237,15 @@ def get_dataset(
     Each prompt has the `model`'s chat template applied  to it.
     """
     if path.exists():
+        # TODO: check that ids given match dataset saved on disk
         ds = load_from_disk(path)
-    else:
+    elif ids:
         ds = _build_base_dataset(path, model, ids)
+    else:
+        raise ValueError(
+            "No valid path to dataset provided, so defaulted to building new dataset. "
+            "However, no ids were provided, so dataset cannot be built."
+        )
 
     h = np.array(ds["is_harmful"], bool)
     r = np.array(ds["is_refused"], bool)
@@ -265,7 +272,7 @@ def get_dataset(
             ) 
 
     ds = DatasetDict(splits)
-    ds.set_format("torch", columns=["resid"])
+    ds.set_format("torch", columns=["resid"], output_all_columns=True)
 
     return ds
 

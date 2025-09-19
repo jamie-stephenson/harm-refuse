@@ -17,8 +17,8 @@ def cluster(
     ds = get_dataset(
         config.paths.data, 
         model,
-        ids,
         n_samples=config.n_samples,
+        ids=ids,
     )
 
     # (n_clusters, n_layers, n_ids, d_model)
@@ -41,7 +41,7 @@ def cluster(
     )
 
     # Positive cossim diff means more similarity
-    # with refused than accepted.
+    # with harmful_refused than harmless_accepted.
     # (n_mistakes, batch_size, n_layers, n_ids)
     cossim_diff = cossims[0] - cossims[1]
 

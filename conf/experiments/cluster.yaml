@@ -2,10 +2,9 @@ defaults:
 - /experiments/defaults
 
 # This will not be a config attribute, this points to the file in conf/model/ 
-- model: smol
+- model: llama3-8B
 - _self_
 
 name: cluster
 
 # Default overrides:
-n_samples: 10
