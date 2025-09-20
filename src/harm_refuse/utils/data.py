@@ -206,12 +206,10 @@ def _build_from_local(
     }
 
     formatted_datasets = []
+    large_files = ["Fuzzer", "example_test", "human-seed"]
     for path in sorted(data_dir.glob("*.json")):
-        files_to_skip = ["GPTFuzzer-50-adv", "example_test", "human-seed"]
-        if any(n in str(path) for n in files_to_skip):
-            continue
-
         print("Processing file: ", path)
+        batch_size = 8 if any(n in str(path) for n in large_files) else 128
         records = []
         with path.open("r", encoding="utf-8") as handle:
             for i, line in enumerate(handle):
@@ -226,18 +224,7 @@ def _build_from_local(
                 if not prompt:
                     continue
 
-                category = (
-                    obj.get("category")
-                    or obj.get("Category")
-                    or obj.get("Subcategory")
-                    or obj.get("focus")
-                    or obj.get("type")
-                    or obj.get("dataset")
-                    or obj.get("note")
-                    or ""
-                )
-
-                records.append({"prompt": prompt, "category": category or ""})
+                records.append({"prompt": prompt, "category": ""})
 
         if not records:
             continue
@@ -260,6 +247,7 @@ def _build_from_local(
             category_key="category",
             source=path.stem,
             remote=remote,
+            batch_size= batch_size,
         )
 
         formatted_datasets.append(formatted)
