@@ -211,6 +211,7 @@ def _build_from_local(
         if any(n in str(path) for n in files_to_skip):
             continue
 
+        print("Processing file: ", path)
         records = []
         with path.open("r", encoding="utf-8") as handle:
             for i, line in enumerate(handle):
