@@ -22,6 +22,7 @@ def run_inference(
     model: LanguageModel,
     ids: list[int],
     batch_size: int,
+    remote: bool,
 ) -> tuple[list[str], Tensor]:
 
     # Once the model goes into "remote mode" it becomes an `Envoy`
@@ -30,7 +31,7 @@ def run_inference(
     tokens = _template_and_tokenize(prompts, model)
     n_rows = tokens["input_ids"].size(0)
 
-    with model.session(remote=True), torch.inference_mode():
+    with model.session(remote=remote), torch.inference_mode():
         resid_batches = [].save()
         response_tokens = [].save()
 

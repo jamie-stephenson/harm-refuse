@@ -1,7 +1,9 @@
 # @package _global_
 device: auto
 n_ids: 1
-n_samples: 100
+n_samples: 34
+remote: True
+local_data: False
 
 paths:
   data: data/${model_name}/

@@ -11,4 +11,5 @@ wheels/
 
 test.py
 data/
+local_data/
 outputs/

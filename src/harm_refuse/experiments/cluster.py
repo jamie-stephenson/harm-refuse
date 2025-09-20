@@ -18,6 +18,8 @@ def cluster(
         config.paths.data, 
         model,
         n_samples=config.n_samples,
+        local_data=config.local_data,
+        remote=config.remote,
         ids=ids,
     )
 

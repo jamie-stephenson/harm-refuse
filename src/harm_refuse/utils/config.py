@@ -27,6 +27,8 @@ class Config:
     device: str = MISSING
     n_ids: int = MISSING
     n_samples: int = MISSING
+    local_data: bool = MISSING
+    remote: bool = MISSING
     
     @classmethod
     def from_dictconfig(cls, dictconfig: DictConfig):
