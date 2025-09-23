@@ -5,6 +5,7 @@ from nnsight import LanguageModel
 import torch
 from torch import Tensor
 
+_LONG_SEQ_TOKENS_THRESHOLD = 256  # if padded seq length exceeds this, split current inner batch in half
 
 def _template_and_tokenize(prompts: list[str], model: LanguageModel) -> dict[str, Tensor]:
     chats = [[{"role": "user", "content": p}] for p in prompts]
@@ -16,6 +17,16 @@ def _template_and_tokenize(prompts: list[str], model: LanguageModel) -> dict[str
         padding=True,
         return_dict=True,
     )) # pyright: ignore
+
+def _micro_batch(b, thr=_LONG_SEQ_TOKENS_THRESHOLD):
+    L = int(b["attention_mask"].sum(1).max().item())
+    B = int(b["input_ids"].shape[0])
+    if L <= thr or B == 1:
+        yield {k: (v[:, -L:] if getattr(v, "ndim", 0) == 2 else v) for k, v in b.items()}
+    else:
+        m = B // 2
+        yield from _micro_batch({k: v[:m]  for k, v in b.items()}, 2*thr)
+        yield from _micro_batch({k: v[m:]  for k, v in b.items()}, 2*thr)
 
 def run_inference(
     prompts: list[str],
@@ -39,14 +50,13 @@ def run_inference(
             print(f"Prompts processed: {i}")
             # batch the tokens *and* the mask
             batch = {k: v[i:i+batch_size] for k,v in tokens.items()}
+            print(batch["input_ids"].shape)
 
-            with model.generate(batch, max_new_tokens=64):
-                # Save the residual stream after *one* forward pass
-                resid_batches.append([model.model.layers[i].output[:, ids] for i in range(n_layers)])
-
-                # Save output tokens after *all* forwards passes
-                response_tokens.extend(model.generator.output)
-
+            for b in _micro_batch(batch):
+                print(b["input_ids"].shape)
+                with model.generate(b, max_new_tokens=32):
+                    resid_batches.append([model.model.layers[i].output[:, ids] for i in range(n_layers)])
+                    response_tokens.extend(model.generator.output)
 
     resid = torch.cat([ 
         torch.stack([h.cpu() for h in batch], dim=1)

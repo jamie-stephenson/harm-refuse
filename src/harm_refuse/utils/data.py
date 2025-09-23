@@ -18,186 +18,66 @@ from datasets import (
 import numpy as np
 
 from pathlib import Path
+import json
 
+# unified features for pre-inference prompt pool
+_PROMPT_FEATS = Features({
+    "prompt": Value("string"),
+    "source": Value("string"),
+    "is_harmful": Value("bool"),
+})
 
-def _reformat(
-    ds: Dataset,
-    model: LanguageModel,
-    is_harmful: bool,
-    prompt_key: str,
-    category_key: str,
-    source: str,
-    remote: bool,
-    ids: list[int],
-    batch_size: int = 128,
-) -> Dataset:
-    """Normalises datasets to format we need for experiments."""
+# outer batching for calls to run_inference (inner batching lives inside run_inference)
+_OUTER_BATCH_SIZE = 1024
 
-    prompts = list(ds[prompt_key])
-    responses, resid = run_inference(prompts, model, ids, batch_size, remote)
+# --------- helpers to load prompts only (no inference here) ---------
 
-    L = model.config.num_hidden_layers
-    S = len(ids)
-    D = model.config.hidden_size
-
-    cols = {
-        "prompt": [item[prompt_key] for item in ds],
-        "source": [source]*len(ds),
-        "category": [item.get(category_key, "") for item in ds],
-        "is_harmful": [is_harmful]*len(ds),
-        "is_refused": [is_refused(r) for r in responses],
-        "resid": [h for h in resid],
-    }
-
-    feats = Features({
-        "prompt": Value("string"),
-        "source": Value("string"),
-        "category": Value("string"),
-        "is_harmful": Value("bool"),
-        "is_refused": Value("bool"),
-        "resid": Array3D((L, S, D), "float32"),
-    })
-
-    return Dataset.from_dict(cols, features=feats)
-
-def advbench(model: LanguageModel, **kwargs) -> Dataset:
-    """
-    AdvBench harmful behaviors.
-    HF hub: walledai/AdvBench (train split, columns include 'prompt').  MIT license.
-    """
-    ds = load_dataset("walledai/AdvBench", split="train")  # columns: ['prompt', 'target'] etc.
-    return _reformat(
-        ds,
-        model,
-        is_harmful=True,
-        prompt_key="prompt",
-        category_key=None,
-        source="AdvBench",
-        **kwargs,
+def _ds_from_cols(prompts: list[str], source: str, is_harmful: bool) -> Dataset:
+    return Dataset.from_dict(
+        {
+            "prompt": prompts,
+            "source": [source] * len(prompts),
+            "is_harmful": [is_harmful] * len(prompts),
+        },
+        features=_PROMPT_FEATS,
     )
 
-def jbb(model: LanguageModel, **kwargs) -> Dataset:
-    """
-    JailbreakBench behaviors: has 'harmful' and 'benign' splits.
-    Use 'Goal' as the prompt; 'Category' is available.  MIT license.
-    """
+def _advbench_prompts() -> Dataset:
+    ds = load_dataset("walledai/AdvBench", split="train")
+    return _ds_from_cols(list(ds["prompt"]), "AdvBench", True)
+
+def _jbb_prompts() -> Dataset:
     data = load_dataset("JailbreakBench/JBB-Behaviors", "behaviors")
-    harmful_split = data["harmful"]
-    benign_split  = data["benign"]
+    harmful = _ds_from_cols(list(data["harmful"]["Goal"]), "JBB", True)
+    benign  = _ds_from_cols(list(data["benign"]["Goal"]),  "JBB", False)
+    return concatenate_datasets([harmful, benign])
 
-    harmful = _reformat(
-        ds=harmful_split,
-        model=model,
-        is_harmful=True,
-        prompt_key="Goal",
-        category_key="Category",
-        source="JBB",
-        **kwargs,
-    )
-
-    benign = _reformat(
-        ds=benign_split,
-        model=model,
-        is_harmful=False,
-        prompt_key="Goal",
-        category_key="Category",
-        source="JBB",
-        **kwargs,
-    )
-
-    return concatenate_datasets([harmful, benign]) 
-
-def sorry_bench(model: LanguageModel, **kwargs) -> Dataset:
-    """
-    SORRY-Bench unsafe instructions across 44 categories (+ mutations).
-    You must accept the license on the hub and be logged in.
-    """
-
+def _sorry_bench_prompts() -> Dataset:
     ds = load_dataset(
         "sorry-bench/sorry-bench-202503",
-        token="", 
+        token="",
         split="train[:1000]",
-    ).map(
-        # Prompt is wrapped in list that is always length 1. 
-        lambda e: {"turns": e["turns"][0]} 
-    )
+    ).map(lambda e: {"turns": e["turns"][0]})
+    return _ds_from_cols(list(ds["turns"]), "SORRY-Bench", True)
 
-    return _reformat(
-        ds,
-        model,
-        is_harmful=True,
-        prompt_key="turns",
-        category_key="category",
-        source="SORRY-Bench",
-        batch_size=16,
-        **kwargs,
-    )
-
-
-def xstest(model: LanguageModel, **kwargs) -> Dataset:
-    """
-    XSTest includes 250 safe + 200 unsafe prompts (labels 'safe'/'unsafe').
-    Use 'prompt' as text; include 'type' or 'focus' in category if present.  CC-BY-4.0.
-    """
-    ds = load_dataset("walledai/XSTest")["test"]  # columns include: prompt, label ('safe'/'unsafe'), type, focus, note
-    safe = ds.filter(lambda x: x["label"] == "safe")
+def _xstest_prompts() -> Dataset:
+    ds = load_dataset("walledai/XSTest")["test"]
+    safe   = ds.filter(lambda x: x["label"] == "safe")
     unsafe = ds.filter(lambda x: x["label"] == "unsafe")
+    safe_ds   = _ds_from_cols(list(safe["prompt"]), "XSTest", False)
+    unsafe_ds = _ds_from_cols(list(unsafe["prompt"]), "XSTest", True)
+    return concatenate_datasets([safe_ds, unsafe_ds])
 
-    safe = _reformat(
-        ds=safe,
-        model=model,
-        is_harmful=False,
-        prompt_key="prompt",
-        category_key=None,
-        source="XSTest",
-        **kwargs,
-    )
-
-    unsafe = _reformat(
-        ds=unsafe,
-        model=model,
-        is_harmful=True,
-        prompt_key="prompt",
-        category_key=None,
-        source="XSTest",
-        **kwargs
-    )
-    
-    return concatenate_datasets([safe, unsafe])
-
-def alpaca(model: LanguageModel, **kwargs) -> Dataset:
-    """
-    Alpaca instruction-tuning data (harmless). Use 'instruction' + optional 'input' to form a single prompt.
-    Prefer the popular cleaned variant: yahma/alpaca-cleaned (CC-BY-4.0).
-    """
-    ds = load_dataset("yahma/alpaca-cleaned", split="train[:1000]")  # columns: instruction, input, output
-    
+def _alpaca_prompts() -> Dataset:
+    ds = load_dataset("yahma/alpaca-cleaned", split="train[:1000]")
     ds = ds.map(
-        lambda e: {
-            "prompt": e["instruction"] + (("\n" + e["input"]) if e.get("input") else "")
-        },
+        lambda e: {"prompt": e["instruction"] + (("\n" + e["input"]) if e.get("input") else "")},
         remove_columns=["instruction", "input"]
     )
+    return _ds_from_cols(list(ds["prompt"]), "Alpaca", False)
 
-    return _reformat(
-        ds,
-        model,
-        is_harmful=False,
-        prompt_key="prompt",
-        category_key=None,
-        source="Alpaca",
-        **kwargs,
-    )
-
-def _build_from_local(
-    model: LanguageModel,
-    ids: list[int],
-    remote: bool,
-    data_dir: Path, 
-) -> Dataset:
-    """Load newline-delimited JSON prompts from `data/` and normalise via `_reformat`."""
-
-    import json
+def _collect_prompts_from_local(data_dir: Path) -> Dataset:
+    """Load newline-delimited JSON prompts from local data and return dataset with prompt/source/is_harmful only. Here, 'local data' refers to the data in the orginal paper's repo."""
 
     harm_overrides = {
         "alpaca_data_instruction.json": False,
@@ -205,11 +85,9 @@ def _build_from_local(
         "xstest-harmless.json": False,
     }
 
-    formatted_datasets = []
+    prompt_datasets = []
     large_files = ["Fuzzer", "example_test", "human-seed"]
     for path in sorted(data_dir.glob("*.json")):
-        print("Processing file: ", path)
-        batch_size = 8 if any(n in str(path) for n in large_files) else 128
         records = []
         with path.open("r", encoding="utf-8") as handle:
             for i, line in enumerate(handle):
@@ -218,90 +96,131 @@ def _build_from_local(
                 line = line.strip()
                 if not line:
                     continue
-
                 obj = json.loads(line)
                 prompt = obj.get("bad_q") or obj.get("instruction")
                 if not prompt:
                     continue
-
-                records.append({"prompt": prompt, "category": ""})
-
+                records.append(prompt)
         if not records:
             continue
 
         is_harmful = harm_overrides.get(path.name)
         if is_harmful is None:
             lowered = path.stem.lower()
-            if "harmless" in lowered or "alpaca" in lowered:
-                is_harmful = False
-            else:
-                is_harmful = True
+            is_harmful = not ("harmless" in lowered or "alpaca" in lowered)
 
-        ds = Dataset.from_list(records)
-        formatted = _reformat(
-            ds=ds,
-            model=model,
-            ids=ids,
-            is_harmful=is_harmful,
-            prompt_key="prompt",
-            category_key="category",
-            source=path.stem,
-            remote=remote,
-            batch_size= batch_size,
-        )
+        prompt_datasets.append(_ds_from_cols(records, path.stem, is_harmful))
 
-        formatted_datasets.append(formatted)
-
-    if not formatted_datasets:
+    if not prompt_datasets:
         raise ValueError(f"No JSON prompts found in {data_dir}")
 
-    if len(formatted_datasets) == 1:
-        return formatted_datasets[0]
+    if len(prompt_datasets) == 1:
+        return prompt_datasets[0]
+    return concatenate_datasets(prompt_datasets)
 
-    return concatenate_datasets(formatted_datasets)
+# --------- build unified prompt pool (no inference yet) ---------
+
+def _build_prompt_pool(
+    use_local_data: bool,
+) -> Dataset:
+    if use_local_data:
+        return _collect_prompts_from_local(Path("./local_data/"))
+
+    components = [
+        _advbench_prompts,
+        _jbb_prompts,
+        _sorry_bench_prompts,
+        _xstest_prompts,
+        _alpaca_prompts,
+    ]
+    return concatenate_datasets([fn() for fn in components])
+
+# --------- attach model outputs to unified dataset ---------
+
+def _attach_outputs(
+    prompt_ds: Dataset,
+    model: LanguageModel,
+    ids: list[int],
+    remote: bool,
+    inner_batch_size: int = 128,
+) -> Dataset:
+    """Run outer-batched inference over prompts, attach is_refused and resid per row."""
+    prompts = list(prompt_ds["prompt"])
+    N = len(prompts)
+
+    # resid geometry
+    L = model.config.num_hidden_layers
+    S = len(ids)
+    D = model.config.hidden_size
+
+    all_is_refused: list[bool] = []
+    all_resid_arrays: list[np.ndarray] = []
+
+    for start in range(0, N, _OUTER_BATCH_SIZE):
+        batch_prompts = prompts[start:start + _OUTER_BATCH_SIZE]
+        responses, resid = run_inference(
+            prompts=batch_prompts,
+            model=model,
+            ids=ids,
+            batch_size=inner_batch_size,
+            remote=remote,
+        )  # resid expected shape: [B, L, S, D] after stacking
+
+        # ensure CPU numpy and correct dtype
+        resid_np = resid.detach().cpu().numpy()
+
+        all_is_refused.extend([is_refused(r) for r in responses])
+        all_resid_arrays.extend([resid_np[i] for i in range(resid_np.shape[0])])
+
+        print("Prompts processed: ", start)
+
+    # create new dataset with appended columns in original order
+    feats = Features({
+        "prompt": Value("string"),
+        "source": Value("string"),
+        "is_harmful": Value("bool"),
+        "is_refused": Value("bool"),
+        "resid": Array3D((L, S, D), "float32"),
+    })
+
+    return Dataset.from_dict(
+        {
+            "prompt": prompts,
+            "source": list(prompt_ds["source"]),
+            "is_harmful": list(prompt_ds["is_harmful"]),
+            "is_refused": all_is_refused,
+            "resid": all_resid_arrays,
+        },
+        features=feats,
+    )
+
+# --------- pipeline entrypoints (rest of file) ---------
 
 def _build_base_dataset(
     path: Path,
     model: LanguageModel,
     ids: list[int],
-    local_data: bool,
+    use_local_data: bool,
     remote: bool,
 ) -> Dataset:
-    if local_data:
-        base = _build_from_local(model, ids, remote, Path("./local_data/"))
-    else:
-        components = [
-            advbench,
-            jbb,
-            sorry_bench,
-            xstest,
-            alpaca,
-        ]
+    prompt_pool = _build_prompt_pool(use_local_data)
 
-        base = concatenate_datasets([
-            ds(model, ids=ids, remote=remote) for ds in components
-        ])
-    
-    # idk if all models expose their structure like this
-    # but all the ones for this project do.
-    L = model.config.num_hidden_layers
-    S = len(ids)
-    D = model.config.hidden_size
-
-    base = base.cast_column(
-        "resid",
-        Array3D((L, S, D),"float32")
+    # run outer-batched inference and attach outputs
+    base = _attach_outputs(
+        prompt_ds=prompt_pool,
+        model=model,
+        ids=ids,
+        remote=remote,
     )
 
     base.save_to_disk(path)
-
     return base
 
 def get_dataset(
     path: Path,
     model: LanguageModel,
     n_samples: int,
-    local_data: bool,
+    use_local_data: bool,
     remote: bool,
     seed: int = 91,
     ids: list[int] | None = None,
@@ -312,16 +231,11 @@ def get_dataset(
     - Accepted harmful
     - Refused harmless
     - Refused harmful
-
-    Each prompt has the `model`'s chat template applied  to it.
-
-    `local`: whether to use data saved in `local_data`.
     """
     if path.exists():
-        # TODO: check that ids given match dataset saved on disk
         ds = load_from_disk(path)
     elif ids:
-        ds = _build_base_dataset(path, model, ids, local_data, remote)
+        ds = _build_base_dataset(path, model, ids, use_local_data, remote)
     else:
         raise ValueError(
             "No valid path to dataset provided, so defaulted to building new dataset. "
@@ -344,9 +258,7 @@ def get_dataset(
         if not np.any(m):
             raise ValueError(f"Split '{k}' is empty.")
         elif n_samples > m.sum():
-            raise ValueError(
-                f"Not enough examples in split '{k}' ({m.sum()}<{n_samples})."
-            )
+            raise ValueError(f"Not enough examples in split '{k}' ({m.sum()}<{n_samples}).")
         else:
             splits[k] = ds.select(
                 rng.choice(np.where(m)[0], size=n_samples, replace=False).tolist()
@@ -354,7 +266,4 @@ def get_dataset(
 
     ds = DatasetDict(splits)
     ds.set_format("torch", columns=["resid"], output_all_columns=True)
-
     return ds
-
-
