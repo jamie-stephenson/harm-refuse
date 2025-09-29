@@ -42,21 +42,28 @@ def run_inference(
     tokens = _template_and_tokenize(prompts, model)
     n_rows = tokens["input_ids"].size(0)
 
+    # `model.session(remote=True)` does not allow use of user defined
+    # functions (e.g. `_micro_batch`) so we use them now.
+    micro_batches = []
+    for i in range(0, n_rows, batch_size):
+        batch = {k: v[i:i+batch_size] for k, v in tokens.items()}
+        micro_batches.extend(list(_micro_batch(batch)))  # runs locally
+
+    print("Number of batches:", len(micro_batches))
+    print([b["input_ids"].shape for b in micro_batches])
+
     with model.session(remote=remote), torch.inference_mode():
-        resid_batches = [].save()
-        response_tokens = [].save()
+        resid_batches = list().save()
+        response_tokens = list().save()
 
-        for i in range(0, n_rows, batch_size):
-            print(f"Prompts processed: {i}")
-            # batch the tokens *and* the mask
-            batch = {k: v[i:i+batch_size] for k,v in tokens.items()}
-            print(batch["input_ids"].shape)
+        for i, b in enumerate(micro_batches):
+            print(f"Batches processed: {i}.")
 
-            for b in _micro_batch(batch):
-                print(b["input_ids"].shape)
-                with model.generate(b, max_new_tokens=32):
-                    resid_batches.append([model.model.layers[i].output[:, ids] for i in range(n_layers)])
-                    response_tokens.extend(model.generator.output)
+            # TODO: Stop streamer warnings, and explore nnight.local for early download.
+            with model.generate(b, max_new_tokens=32):
+                resid_batches.append([model.model.layers[l].output[0][:, ids] for l in range(n_layers)])
+                response_tokens.extend(model.generator.output)
+                
 
     resid = torch.cat([ 
         torch.stack([h.cpu() for h in batch], dim=1)
