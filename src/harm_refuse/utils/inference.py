@@ -25,8 +25,8 @@ def _micro_batch(b, thr=_LONG_SEQ_TOKENS_THRESHOLD):
         yield {k: (v[:, -L:] if getattr(v, "ndim", 0) == 2 else v) for k, v in b.items()}
     else:
         m = B // 2
-        yield from _micro_batch({k: v[:m]  for k, v in b.items()}, 2*thr)
-        yield from _micro_batch({k: v[m:]  for k, v in b.items()}, 2*thr)
+        yield from _micro_batch({k: v[:m]  for k, v in b.items()}, int(1.5*thr))
+        yield from _micro_batch({k: v[m:]  for k, v in b.items()}, int(1.5*thr))
 
 def run_inference(
     prompts: list[str],
@@ -59,7 +59,7 @@ def run_inference(
         for i, b in enumerate(micro_batches):
             print(f"Batches processed: {i}.")
 
-            # TODO: Stop streamer warnings, and explore nnight.local for early download.
+            # TODO: Stop streamer warnings, and explore nnsight.local for early download.
             with model.generate(b, max_new_tokens=32):
                 resid_batches.append([model.model.layers[l].output[0][:, ids] for l in range(n_layers)])
                 response_tokens.extend(model.generator.output)

@@ -118,7 +118,7 @@ def _collect_prompts_from_local(data_dir: Path) -> Dataset:
         return prompt_datasets[0]
     return concatenate_datasets(prompt_datasets)
 
-# --------- build unified prompt pool (no inference yet) ---------
+# --------- build unified prompt pool ---------
 
 def _build_prompt_pool(
     use_local_data: bool,
