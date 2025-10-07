@@ -86,8 +86,7 @@ def _collect_prompts_from_local(data_dir: Path) -> Dataset:
     }
 
     prompt_datasets = []
-    large_files = ["Fuzzer", "example_test", "human-seed"]
-    for path in sorted(data_dir.glob("*.json")):
+    for path in reversed(sorted(data_dir.glob("*.json"))):
         records = []
         with path.open("r", encoding="utf-8") as handle:
             for i, line in enumerate(handle):
@@ -127,11 +126,11 @@ def _build_prompt_pool(
         return _collect_prompts_from_local(Path("./local_data/"))
 
     components = [
-        _advbench_prompts,
         _jbb_prompts,
+        _alpaca_prompts,
+        _advbench_prompts,
         _sorry_bench_prompts,
         _xstest_prompts,
-        _alpaca_prompts,
     ]
     return concatenate_datasets([fn() for fn in components])
 
@@ -157,6 +156,7 @@ def _attach_outputs(
     all_resid_arrays: list[np.ndarray] = []
 
     for start in range(0, N, _OUTER_BATCH_SIZE):
+        print("Prompts processed: ", start)
         batch_prompts = prompts[start:start + _OUTER_BATCH_SIZE]
         responses, resid = run_inference(
             prompts=batch_prompts,
@@ -166,13 +166,9 @@ def _attach_outputs(
             remote=remote,
         )  # resid expected shape: [B, L, S, D] after stacking
 
-        # ensure CPU numpy and correct dtype
-        resid_np = resid.detach().cpu().numpy()
-
         all_is_refused.extend([is_refused(r) for r in responses])
-        all_resid_arrays.extend([resid_np[i] for i in range(resid_np.shape[0])])
+        all_resid_arrays.extend(resid)
 
-        print("Prompts processed: ", start)
 
     # create new dataset with appended columns in original order
     feats = Features({

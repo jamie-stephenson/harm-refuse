@@ -5,6 +5,8 @@ from nnsight import LanguageModel
 import torch
 from torch import Tensor
 
+from itertools import chain
+
 _LONG_SEQ_TOKENS_THRESHOLD = 256  # if padded seq length exceeds this, split current inner batch in half
 
 def _template_and_tokenize(prompts: list[str], model: LanguageModel) -> dict[str, Tensor]:
@@ -34,7 +36,7 @@ def run_inference(
     ids: list[int],
     batch_size: int,
     remote: bool,
-) -> tuple[list[str], Tensor]:
+) -> tuple[list[str], chain]:
 
     # Once the model goes into "remote mode" it becomes an `Envoy`
     # which does not expose `config` etc., so we store n_layers now.
@@ -50,10 +52,12 @@ def run_inference(
         micro_batches.extend(list(_micro_batch(batch)))  # runs locally
 
     print("Number of batches:", len(micro_batches))
-    print([b["input_ids"].shape for b in micro_batches])
 
     with model.session(remote=remote), torch.inference_mode():
         resid_batches = list().save()
+
+        # Each element will be a list of length L of tensors of shape (mB,S,D)
+        # mB is *micro*batch size
         response_tokens = list().save()
 
         for i, b in enumerate(micro_batches):
@@ -61,14 +65,13 @@ def run_inference(
 
             # TODO: Stop streamer warnings, and explore nnsight.local for early download.
             with model.generate(b, max_new_tokens=32):
-                resid_batches.append([model.model.layers[l].output[0][:, ids] for l in range(n_layers)])
+                resid_batches.append([model.model.layers[l].output[:, ids] for l in range(n_layers)])
                 response_tokens.extend(model.generator.output)
                 
-
-    resid = torch.cat([ 
-        torch.stack([h.cpu() for h in batch], dim=1)
+    resid = chain.from_iterable( 
+        torch.unbind(torch.stack(batch, dim=1).cpu())
         for batch in resid_batches
-    ])
+    )
 
     responses = model.tokenizer.batch_decode(
         response_tokens,
