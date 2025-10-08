@@ -1,6 +1,6 @@
 # LLMs Encode Harmfulness and Refusal Separately — Reproduction
 
-A minimal repo to reproducing experiments from [this paper](https://arxiv.org/abs/2507.11878). Code is organized with configs in `conf/`, experiment functions in `src/harm_refuse/experiments/`, and an entry point at `run.py`.
+Reproducing experiments from [this paper](https://arxiv.org/abs/2507.11878). Code is organized with configs in `conf/`, experiment functions in `src/harm_refuse/experiments/`, and an entry point at `run.py`.
 
 ## Quick Start (uv)
 - Set up environment with `uv sync`
